@@ -10,16 +10,21 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from mcrcon import MCRcon
 
 # Загрузка переменных окружения
-load_dotenv()
+load_dotenv('data.env')
 
 # Конфигурация
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 RCON_HOST = os.getenv('RCON_HOST')
-RCON_PORT = int(os.getenv('RCON_PORT'))
+RCON_PORT = os.getenv('RCON_PORT')
 RCON_PASSWORD = os.getenv('RCON_PASSWORD')
 
-if RCON_PORT is None:
-    raise ValueError("Переменная окружения RCON_PORT не определена")
+# Проверка обязательных переменных
+required_vars = ['TELEGRAM_TOKEN', 'RCON_HOST', 'RCON_PORT', 'RCON_PASSWORD']
+for var in required_vars:
+    if not os.getenv(var):
+        raise ValueError(f"Переменная окружения {var} не определена")
+
+# Преобразуем RCON_PORT в целое число
 try:
     RCON_PORT = int(RCON_PORT)
 except ValueError:
@@ -27,15 +32,19 @@ except ValueError:
 
 DB_CONFIG = {
     "host": os.getenv('DB_HOST'),
-    "port": os.getenv('DB_PORT'),  # Получаем значение порта как строки
+    "port": os.getenv('DB_PORT'),
     "database": os.getenv('DB_NAME'),
     "user": os.getenv('DB_USER'),
     "password": os.getenv('DB_PASSWORD')
 }
 
-# Проверяем, что порт определён и преобразуем его в целое число
-if DB_CONFIG["port"] is None:
-    raise ValueError("Переменная окружения DB_PORT не определена")
+# Проверяем, что все переменные БД определены
+required_db_vars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']
+for var in required_db_vars:
+    if os.getenv(var) is None:
+        raise ValueError(f"Переменная окружения {var} не определена")
+
+# Преобразуем порт в целое число
 try:
     DB_CONFIG["port"] = int(DB_CONFIG["port"])
 except ValueError:
