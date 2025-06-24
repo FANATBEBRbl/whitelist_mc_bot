@@ -18,14 +18,28 @@ RCON_HOST = os.getenv('RCON_HOST')
 RCON_PORT = int(os.getenv('RCON_PORT'))
 RCON_PASSWORD = os.getenv('RCON_PASSWORD')
 
-# Параметры MySQL
+if RCON_PORT is None:
+    raise ValueError("Переменная окружения RCON_PORT не определена")
+try:
+    RCON_PORT = int(RCON_PORT)
+except ValueError:
+    raise ValueError("Значение переменной окружения RCON_PORT должно быть целым числом")
+
 DB_CONFIG = {
-    "host": os.getenv('DB_HOST'),       
-    "port": int(os.getenv('DB_PORT')),             
-    "database": os.getenv('DB_NAME'),  
-    "user": os.getenv('DB_USER'),   
-    "password": os.getenv('DB_PASSWORD')     
+    "host": os.getenv('DB_HOST'),
+    "port": os.getenv('DB_PORT'),  # Получаем значение порта как строки
+    "database": os.getenv('DB_NAME'),
+    "user": os.getenv('DB_USER'),
+    "password": os.getenv('DB_PASSWORD')
 }
+
+# Проверяем, что порт определён и преобразуем его в целое число
+if DB_CONFIG["port"] is None:
+    raise ValueError("Переменная окружения DB_PORT не определена")
+try:
+    DB_CONFIG["port"] = int(DB_CONFIG["port"])
+except ValueError:
+    raise ValueError("Значение переменной окружения DB_PORT должно быть целым числом")
 
 # Настройка логгирования
 logging.basicConfig(
