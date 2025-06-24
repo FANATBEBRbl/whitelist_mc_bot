@@ -9,179 +9,202 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from mcrcon import MCRcon
 
-# Загрузка переменных окружения
-load_dotenv('data.env')
-
-# Конфигурация
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-RCON_HOST = os.getenv('RCON_HOST')
-RCON_PORT = os.getenv('RCON_PORT')
-RCON_PASSWORD = os.getenv('RCON_PASSWORD')
-
-# Проверка обязательных переменных
-required_vars = ['TELEGRAM_TOKEN', 'RCON_HOST', 'RCON_PORT', 'RCON_PASSWORD']
-for var in required_vars:
-    if not os.getenv(var):
-        raise ValueError(f"Переменная окружения {var} не определена")
-
-# Преобразуем RCON_PORT в целое число
-try:
-    RCON_PORT = int(RCON_PORT)
-except ValueError:
-    raise ValueError("Значение переменной окружения RCON_PORT должно быть целым числом")
-
-DB_CONFIG = {
-    "host": os.getenv('DB_HOST'),
-    "port": os.getenv('DB_PORT'),
-    "database": os.getenv('DB_NAME'),
-    "user": os.getenv('DB_USER'),
-    "password": os.getenv('DB_PASSWORD')
-}
-
-# Проверяем, что все переменные БД определены
-required_db_vars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']
-for var in required_db_vars:
-    if os.getenv(var) is None:
-        raise ValueError(f"Переменная окружения {var} не определена")
-
-# Преобразуем порт в целое число
-try:
-    DB_CONFIG["port"] = int(DB_CONFIG["port"])
-except ValueError:
-    raise ValueError("Значение переменной окружения DB_PORT должно быть целым числом")
-
-# Настройка логгирования
+# Настройка логгирования перед всеми операциями
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Регулярное выражение для ника
-NICKNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]{3,16}$")
-
-# Инициализация БД
-def init_db():
-    conn = None
+def load_config():
+    """Загрузка и валидация конфигурации"""
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                minecraft_nick VARCHAR(16) NOT NULL,
-                added_at DATETIME NOT NULL,
-                role VARCHAR(10) NOT NULL DEFAULT 'player'
-            )
-        """)
-        conn.commit()
-        logger.info("База данных успешно инициализирована")
-    except Error as e:
-        logger.error(f"Ошибка MySQL при инициализации БД: {e}")
-        raise  # Повторно поднимаем исключение, чтобы остановить программу
-    finally:
-        if conn and conn.is_connected():
-            cursor.close()
-            conn.close()
+        # Загрузка переменных окружения
+        if not load_dotenv('data.env'):
+            logger.warning("Файл data.env не найден, используются переменные окружения системы")
+        
+        # Проверка обязательных переменных
+        config = {
+            'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
+            'RCON_HOST': os.getenv('RCON_HOST', 'localhost'),
+            'RCON_PORT': os.getenv('RCON_PORT'),
+            'RCON_PASSWORD': os.getenv('RCON_PASSWORD'),
+            'DB_HOST': os.getenv('DB_HOST'),
+            'DB_PORT': os.getenv('DB_PORT'),
+            'DB_NAME': os.getenv('DB_NAME'),
+            'DB_USER': os.getenv('DB_USER'),
+            'DB_PASSWORD': os.getenv('DB_PASSWORD')
+        }
 
-# Проверка пользователя в БД
-def is_user_in_db(user_id: int) -> tuple[bool, str]:
-    conn = None
-    try:
-        conn = mysql.connector.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute("SELECT role FROM users WHERE user_id = %s", (user_id,))
-        result = cursor.fetchone()
-        if result:
-            return True, result[0]
-        return False, ""
-    except Error as e:
-        logger.error(f"Ошибка MySQL при проверке пользователя: {e}")
-        return False, ""
-    finally:
-        if conn and conn.is_connected():
-            cursor.close()
-            conn.close()
+        # Проверка обязательных переменных
+        required_vars = ['TELEGRAM_TOKEN', 'RCON_PASSWORD']
+        for var in required_vars:
+            if not config[var]:
+                raise ValueError(f"Необходимая переменная окружения {var} не установлена")
 
-# Добавление пользователя в БД
-def add_user_to_db(user_id: int, minecraft_nick: str, role: str = "player"):
-    conn = None
-    try:
-        conn = mysql.connector.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO users (user_id, minecraft_nick, added_at, role)
-            VALUES (%s, %s, %s, %s)
-        """, (user_id, minecraft_nick, datetime.now(), role))
-        conn.commit()
-        logger.info(f"Пользователь {user_id} с ником {minecraft_nick} добавлен в БД")
-    except Error as e:
-        logger.error(f"Ошибка MySQL при добавлении пользователя: {e}")
-    finally:
-        if conn and conn.is_connected():
-            cursor.close()
-            conn.close()
+        # Преобразование портов
+        try:
+            config['RCON_PORT'] = int(config['RCON_PORT']) if config['RCON_PORT'] else 25575
+            config['DB_PORT'] = int(config['DB_PORT']) if config['DB_PORT'] else 3306
+        except ValueError as e:
+            raise ValueError("Порт должен быть целым числом") from e
 
-# Команда /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    is_in_db, role = is_user_in_db(user_id)
-    if is_in_db and role == "player":
-        await update.message.reply_text(
-            "❌ Вы уже добавили игрока. Один пользователь может добавить только одного игрока!"
-        )
-    else:
-        await update.message.reply_text(
-            "Привет! Отправь мне ник игрока (3-16 символов, латиница, цифры или _), "
-            "и я добавлю его в вайтлист и группу default. У вас есть право добавить только одного игрока!"
-        )
-
-# Обработка ника
-async def handle_nickname(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    nickname = update.message.text.strip()
-
-    is_in_db, role = is_user_in_db(user_id)
-    if is_in_db and role == "player":
-        await update.message.reply_text("❌ Вы уже использовали свой лимит (1 игрок).")
-        return
-
-    if not NICKNAME_PATTERN.match(nickname):
-        await update.message.reply_text(
-            "❌ Неверный формат ника! Допустимо:\n"
-            "- Только A-Z, a-z, 0-9 и _\n"
-            "- Длина: 3-16 символов."
-        )
-        return
-
-    try:
-        with MCRcon(RCON_HOST, RCON_PASSWORD, RCON_PORT) as mcr:
-            # Добавляем в вайтлист
-            whitelist_response = mcr.command(f"whitelist add {nickname}")
-            
-            # Добавляем в группу default
-            lp_response = mcr.command(f"lp user {nickname} group add default")
-            
-            # Сохраняем в БД (если не админ)
-            if role != "admin":
-                add_user_to_db(user_id, nickname)
-            
-            await update.message.reply_text(
-                f"✅ Игрок {nickname} добавлен!\n"
-                f"Вайтлист: {whitelist_response}\n"
-                f"Группа: {lp_response}"
-            )
+        return config
     except Exception as e:
-        logger.error(f"Ошибка RCON: {e}")
-        await update.message.reply_text("❌ Ошибка при отправке команды на сервер.")
+        logger.critical(f"Ошибка загрузки конфигурации: {e}")
+        raise
 
-# Запуск бота
+class Database:
+    """Класс для работы с базой данных"""
+    def __init__(self, config):
+        self.config = {
+            'host': config['DB_HOST'],
+            'port': config['DB_PORT'],
+            'database': config['DB_NAME'],
+            'user': config['DB_USER'],
+            'password': config['DB_PASSWORD']
+        }
+        self.init_db()
+
+    def init_db(self):
+        """Инициализация базы данных"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS users (
+                            user_id BIGINT PRIMARY KEY,
+                            minecraft_nick VARCHAR(16) NOT NULL,
+                            added_at DATETIME NOT NULL,
+                            role VARCHAR(10) NOT NULL DEFAULT 'player'
+                        )
+                    """)
+                    conn.commit()
+                    logger.info("Таблица users создана или уже существует")
+        except Error as e:
+            logger.error(f"Ошибка инициализации БД: {e}")
+            raise
+
+    def get_connection(self):
+        """Получение соединения с БД"""
+        try:
+            return mysql.connector.connect(**self.config)
+        except Error as e:
+            logger.error(f"Ошибка подключения к БД: {e}")
+            raise
+
+    def is_user_in_db(self, user_id: int) -> tuple[bool, str]:
+        """Проверка наличия пользователя в БД"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT role FROM users WHERE user_id = %s", (user_id,))
+                    result = cursor.fetchone()
+                    return (True, result[0]) if result else (False, "")
+        except Error as e:
+            logger.error(f"Ошибка проверки пользователя: {e}")
+            return False, ""
+
+    def add_user(self, user_id: int, minecraft_nick: str, role: str = "player"):
+        """Добавление пользователя в БД"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO users (user_id, minecraft_nick, added_at, role)
+                        VALUES (%s, %s, %s, %s)
+                    """, (user_id, minecraft_nick, datetime.now(), role))
+                    conn.commit()
+                    logger.info(f"Добавлен пользователь {user_id} с ником {minecraft_nick}")
+        except Error as e:
+            logger.error(f"Ошибка добавления пользователя: {e}")
+            raise
+
+class WhitelistBot:
+    """Основной класс бота"""
+    def __init__(self, config):
+        self.config = config
+        self.db = Database(config)
+        self.nickname_pattern = re.compile(r"^[a-zA-Z0-9_]{3,16}$")
+        self.application = Application.builder().token(config['TELEGRAM_TOKEN']).build()
+        
+        # Регистрация обработчиков
+        self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_nickname))
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка команды /start"""
+        user_id = update.effective_user.id
+        is_in_db, role = self.db.is_user_in_db(user_id)
+        
+        if is_in_db and role == "player":
+            await update.message.reply_text(
+                "❌ Вы уже добавили игрока. Один пользователь может добавить только одного игрока!"
+            )
+        else:
+            await update.message.reply_text(
+                "Привет! Отправь мне ник игрока (3-16 символов, латиница, цифры или _), "
+                "и я добавлю его в вайтлист и группу default. У вас есть право добавить только одного игрока!"
+            )
+
+    async def handle_nickname(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка ника игрока"""
+        user_id = update.effective_user.id
+        nickname = update.message.text.strip()
+
+        # Проверка формата ника
+        if not self.nickname_pattern.match(nickname):
+            await update.message.reply_text(
+                "❌ Неверный формат ника! Допустимо:\n"
+                "- Только A-Z, a-z, 0-9 и _\n"
+                "- Длина: 3-16 символов."
+            )
+            return
+
+        # Проверка лимита
+        is_in_db, role = self.db.is_user_in_db(user_id)
+        if is_in_db and role == "player":
+            await update.message.reply_text("❌ Вы уже использовали свой лимит (1 игрок).")
+            return
+
+        # Выполнение RCON команд
+        try:
+            with MCRcon(
+                self.config['RCON_HOST'],
+                self.config['RCON_PASSWORD'],
+                self.config['RCON_PORT']
+            ) as mcr:
+                # Добавление в вайтлист
+                whitelist_response = mcr.command(f"whitelist add {nickname}")
+                
+                # Добавление в группу
+                lp_response = mcr.command(f"lp user {nickname} group add default")
+                
+                # Сохранение в БД (если не админ)
+                if role != "admin":
+                    self.db.add_user(user_id, nickname)
+                
+                await update.message.reply_text(
+                    f"✅ Игрок {nickname} добавлен!\n"
+                    f"Вайтлист: {whitelist_response}\n"
+                    f"Группа: {lp_response}"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка RCON: {e}")
+            await update.message.reply_text("❌ Ошибка при отправке команды на сервер.")
+
+    def run(self):
+        """Запуск бота"""
+        logger.info("Запуск бота...")
+        self.application.run_polling()
+
 def main():
-    init_db()
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_nickname))
-    application.run_polling()
+    try:
+        config = load_config()
+        bot = WhitelistBot(config)
+        bot.run()
+    except Exception as e:
+        logger.critical(f"Критическая ошибка: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()
