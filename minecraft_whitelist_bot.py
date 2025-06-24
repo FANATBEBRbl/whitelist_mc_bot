@@ -62,6 +62,7 @@ NICKNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]{3,16}$")
 
 # Инициализация БД
 def init_db():
+    conn = None
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
@@ -74,15 +75,18 @@ def init_db():
             )
         """)
         conn.commit()
+        logger.info("База данных успешно инициализирована")
     except Error as e:
-        logger.error(f"Ошибка MySQL: {e}")
+        logger.error(f"Ошибка MySQL при инициализации БД: {e}")
+        raise  # Повторно поднимаем исключение, чтобы остановить программу
     finally:
-        if conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
 
 # Проверка пользователя в БД
 def is_user_in_db(user_id: int) -> tuple[bool, str]:
+    conn = None
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
@@ -92,15 +96,16 @@ def is_user_in_db(user_id: int) -> tuple[bool, str]:
             return True, result[0]
         return False, ""
     except Error as e:
-        logger.error(f"Ошибка MySQL: {e}")
+        logger.error(f"Ошибка MySQL при проверке пользователя: {e}")
         return False, ""
     finally:
-        if conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
 
 # Добавление пользователя в БД
 def add_user_to_db(user_id: int, minecraft_nick: str, role: str = "player"):
+    conn = None
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
@@ -109,10 +114,11 @@ def add_user_to_db(user_id: int, minecraft_nick: str, role: str = "player"):
             VALUES (%s, %s, %s, %s)
         """, (user_id, minecraft_nick, datetime.now(), role))
         conn.commit()
+        logger.info(f"Пользователь {user_id} с ником {minecraft_nick} добавлен в БД")
     except Error as e:
-        logger.error(f"Ошибка MySQL: {e}")
+        logger.error(f"Ошибка MySQL при добавлении пользователя: {e}")
     finally:
-        if conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
 
