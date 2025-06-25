@@ -77,7 +77,7 @@ class Database:
                             minecraft_nick VARCHAR(16) NOT NULL,
                             added_at DATETIME NOT NULL,
                             role VARCHAR(10) NOT NULL DEFAULT 'player',
-                            
+                            id INT AUTO_INCREMENT PRIMARY KEY
                         )
                     """)
                     conn.commit()
