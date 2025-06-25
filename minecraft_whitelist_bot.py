@@ -176,21 +176,18 @@ class WhitelistBot:
                 self.config['RCON_PORT']
             ) as mcr:
                 # Добавление в вайтлист
-                whitelist_response = mcr.command(f"whitelist add {nickname}")
-                
-                
-                # Добавление в группу
-                lp_response = mcr.command(f"lp user {nickname} group add default")
+                combined_response = mcr.command(
+                    f"whitelist add {nickname} && "
+                    f"lp user {nickname} group add default"
+                )
+            
+                logger.info(f"Combined response: {combined_response}")
                 
                 # Сохранение в БД (если не админ)
                 if role != "admin":
                     self.db.add_user(user_id, nickname)
                 
-                await update.message.reply_text(
-                    f"✅ Игрок {nickname} добавлен!\n"
-                    f"Вайтлист: {whitelist_response}\n"
-                    f"Группа: {lp_response}"
-                )
+                await update.message.reply_text(f"✅ Игрок {nickname} добавлен в вайтлист и группу default.")
         except Exception as e:
             logger.error(f"Ошибка RCON: {e}")
             await update.message.reply_text("❌ Ошибка при отправке команды на сервер.")
