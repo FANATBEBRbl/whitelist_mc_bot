@@ -1,3 +1,4 @@
+import time
 import os
 from dotenv import load_dotenv
 import logging
@@ -176,6 +177,7 @@ class WhitelistBot:
             ) as mcr:
                 # Добавление в вайтлист
                 whitelist_response = mcr.command(f"whitelist add {nickname}")
+                
                 
                 # Добавление в группу
                 lp_response = mcr.command(f"lp user {nickname} group add default")
