@@ -1,4 +1,3 @@
-import time
 import os
 from dotenv import load_dotenv
 import logging
@@ -74,10 +73,11 @@ class Database:
                 with conn.cursor() as cursor:
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS users (
-                            user_id BIGINT PRIMARY KEY,
+                            invited_by BIGINT NOT NULL,
                             minecraft_nick VARCHAR(16) NOT NULL,
                             added_at DATETIME NOT NULL,
-                            role VARCHAR(10) NOT NULL DEFAULT 'player'
+                            role VARCHAR(10) NOT NULL DEFAULT 'player',
+                            
                         )
                     """)
                     conn.commit()
@@ -99,7 +99,7 @@ class Database:
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT role FROM users WHERE user_id = %s", (user_id,))
+                    cursor.execute("SELECT role FROM users WHERE invited_by = %s", (user_id,))
                     result = cursor.fetchone()
                     return (True, result[0]) if result else (False, "")
         except Error as e:
@@ -112,7 +112,7 @@ class Database:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO users (user_id, minecraft_nick, added_at, role)
+                        INSERT INTO users (invited_by, minecraft_nick, added_at, role)
                         VALUES (%s, %s, %s, %s)
                     """, (user_id, minecraft_nick, datetime.now(), role))
                     conn.commit()
